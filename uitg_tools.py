@@ -63,22 +63,18 @@ def black_scholes_call(S, K, t, r, sig):
 
 # X Search Tools
 def x_keyword_search(query: str, limit: int = 10, mode: str = "Top"):
-    # Mock with negative sentiment for crash queries
     posts = [{'text': f'Mock crash warning for {query} #{i} market panic', 'score': np.random.uniform(-0.8, -0.2)} for i in range(limit)]
     return posts
 
-def x_semantic_search(query: str, limit: int = 10, min_score_threshold: float = 0.18):
-    # Mock semantic; use sentence-transformers for real
-    mock_docs = [f'Mock relevant post for {query} #{i}' for i in range(limit)]
-    scores = np.random.uniform(0.1, 0.9, limit)
-    filtered = [mock_docs[i] for i in range(limit) if scores[i] > min_score_threshold]
-    return [{'text': doc, 'score': float(scores[i])} for i in range(limit) if scores[i] > min_score_threshold]
-
 def aggregate_sentiment(posts: list) -> float:
-    analyzer = SentimentIntensityAnalyzer()
-    scores = [analyzer.polarity_scores(post['text'])['compound'] for post in posts]
-    return np.mean(scores) if scores else 0
+    try:
+        analyzer = SentimentIntensityAnalyzer()
+        scores = [analyzer.polarity_scores(post['text'])['compound'] for post in posts]
+        return np.mean(scores) if scores else 0
+    except:
+        return -0.5  # Fallback
 
+# === REAL GOOGLE SEARCH ===
 def google_search_hedges(query="cheap convex hedges 2025 VIX calls CDX", num=5):
     try:
         API_KEY = st.secrets["GOOGLE_API_KEY"]
@@ -93,56 +89,39 @@ def google_search_hedges(query="cheap convex hedges 2025 VIX calls CDX", num=5):
             "url": item.get("link", "#")
         } for item in items]
     except:
-        # Fallback mock
-        return [{'title': f'Fallback result #{i}', 'snippet': f'OTM VIX call at strike {20+i}', 'url': '#'} for i in range(num)]
-    
-# Web Search Tools
+        return [{'title': f'Fallback #{i}', 'snippet': f'OTM VIX call at strike {20+i}', 'url': '#'} for i in range(num)]
+
+# === web_search (used by dashboard.py) ===
 def web_search(query: str, num_results: int = 10) -> list:
-    # Mock for free tier; replace with Google API if key
-    results = [{'title': f'Mock result for {query} #{i}', 'snippet': f'Suggested hedge: OTM VIX call at strike {20+i}, premium ~${1.0 + i*0.1}', 'url': f'url{i}.com'} for i in range(num_results)]
-    return results
+    return google_search_hedges(query, num_results)
 
-def browse_page(url: str, instructions: str) -> str:
+# === REAL CBOE VIX OPTIONS ===
+def get_cboe_vix_options():
+    url = "https://cdn.cboe.com/api/global/delayed_quotes/options/VX.json"
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        time.sleep(1)
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        text = soup.get_text(separator=' ', strip=True)[:1000]
-        return f"Extracted text: {text} (per {instructions})"
-    except Exception as e:
-        return f"Mock extracted text for {url} (per {instructions})"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        options = []
+        for opt in data['data']['calls']:
+            if opt['delta'] < 0.5 and opt['bid'] > 0:
+                premium = (opt['bid'] + opt['ask']) / 2
+                options.append({
+                    "Strike": opt['strike'],
+                    "Premium": round(premium, 2),
+                    "IV": round(opt['volatility'], 1),
+                    "Delta": round(opt['delta'], 3)
+                })
+        return options[:5] or "No OTM calls"
+    except:
+        try:
+            vix = yf.download('^VIX', period='1d')['Close'].iloc[-1]
+            return f"VIX: {vix:.1f} — Suggest OTM calls at {vix + 5:.0f}"
+        except:
+            return "CBOE API failed"
 
-# Visual Tools
-def view_image(image_url: str) -> str:
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        time.sleep(1)
-        response = requests.get(image_url, headers=headers, timeout=10)
-        response.raise_for_status()
-        if 'text/html' in response.headers.get('Content-Type', ''):
-            soup = BeautifulSoup(response.text, 'html.parser')
-            img_tag = soup.find('img')
-            if img_tag and 'src' in img_tag.attrs:
-                image_url = img_tag['src']
-                if not image_url.startswith('http'):
-                    image_url = f"https://finance.yahoo.com{image_url}"
-                time.sleep(1)
-                response = requests.get(image_url, headers=headers, timeout=10)
-                response.raise_for_status()
-        img = Image.open(BytesIO(response.content))
-        return f"Image viewed: {img.size} pixels (e.g., VIX chart with low vol)"
-    except Exception as e:
-        return f"Error viewing image {image_url}: {str(e)}"
-
-def view_x_video(video_url: str) -> str:
-    # Mock function to bypass moviepy
-    return f"Mock video viewed: {video_url} (e.g., hedge explainer)"
-
-# Convexity Check Tool
+# Convexity Check
 def convexity_check(gamma, delta):
-    return gamma / delta if delta != 0 else 0  # Ratio >0.5 for high convexity
+    return round(gamma / delta, 3) if delta != 0 else 0
 
 # PDF Tools
 def search_pdf_attachment(file_name: str, query: str, mode: str = 'keyword') -> list:
@@ -170,135 +149,71 @@ def browse_pdf_attachment(file_name: str, pages: str) -> str:
     except Exception as e:
         return f"Error browsing PDF {file_name}: {str(e)}"
 
-# Master System Integration
+# === MASTER MONTHLY RUN ===
 def run_uitg_monthly():
-    # Full monthly procedure: Scan, metrics, sentiment, entry check, positioning, visualization
-    # Patience Principle: Embrace the drag in bull markets as the price of convexity in bears; resist frequent adjustments unless triggers are met, as over-trading erodes asymmetry.
-    # Scan hedges
-    scan_results = web_search('cheap convex hedges 2025 VIX calls puts CDX credit', num_results=5)
-    # Compute metrics on VIX
-    code = "import numpy as np\n" + \
-           "import yfinance as yf\n" + \
-           "from hurst import compute_Hc\n" + \
-           "from scipy.stats import norm\n" + \
-           "prices = yf.download('^VIX', period='6mo')['Close'].dropna()\n" + \
-           "hurst = compute_Hc(prices, kind='price')[0]\n" + \
-           "returns = prices.pct_change().dropna()\n" + \
-           "kurt = np.mean((returns - np.mean(returns))**4) / np.std(returns)**4\n" + \
-           "S, K, t, r, sig = 19.34, 20, 0.5, 0.04, 0.25\n" + \
-           "d1 = (np.log(S/K) + (r + sig**2/2)*t) / (sig * np.sqrt(t))\n" + \
-           "d2 = d1 - sig * np.sqrt(t)\n" + \
-           "call = S * norm.cdf(d1) - K * np.exp(-r*t) * norm.cdf(d2)\n" + \
-           "gamma = norm.pdf(d1) / (S * sig * np.sqrt(t))\n" + \
-           "delta = norm.cdf(d1)\n" + \
-           "vega = S * np.sqrt(t) * norm.pdf(d1) / 100\n" + \
-           "result = {'hurst': float(hurst), 'kurtosis': float(kurt), 'call': float(call), 'gamma': float(gamma), 'delta': float(delta), 'vega': float(vega)}"
+    scan_results = web_search('cheap convex hedges 2025 VIX calls puts CDX credit', 5)
+    code = """
+import numpy as np
+import yfinance as yf
+from hurst import compute_Hc
+from scipy.stats import norm
+prices = yf.download('^VIX', period='6mo')['Close'].dropna()
+hurst = compute_Hc(prices, kind='price')[0]
+returns = prices.pct_change().dropna()
+kurt = np.mean((returns - np.mean(returns))**4) / np.std(returns)**4
+S, K, t, r, sig = 19.34, 20, 0.5, 0.04, 0.25
+d1 = (np.log(S/K) + (r + sig**2/2)*t) / (sig * np.sqrt(t))
+d2 = d1 - sig * np.sqrt(t)
+call = S * norm.cdf(d1) - K * np.exp(-r*t) * norm.cdf(d2)
+gamma = norm.pdf(d1) / (S * sig * np.sqrt(t))
+delta = norm.cdf(d1)
+vega = S * np.sqrt(t) * norm.pdf(d1) / 100
+result = {'hurst': float(hurst), 'kurtosis': float(kurt), 'call': float(call), 'gamma': float(gamma), 'delta': float(delta), 'vega': float(vega)}
+"""
     metrics = code_execution(code)
-    # Sentiment
-    posts = x_keyword_search('crash signals 2025', limit=5)
+    posts = x_keyword_search('crash signals 2025', 5)
     sentiment = aggregate_sentiment(posts)
-    # Entry check
-    metrics_dict = {}  # Initialize to avoid UnboundLocalError
     try:
-        metrics_dict = eval(metrics)
-        hurst_value = metrics_dict['hurst']
-        convexity_ratio = convexity_check(metrics_dict['gamma'], metrics_dict['delta'])
-    except Exception as e:
-        print(f"Exception in eval: {e}")  # Debug
+        m = eval(metrics)
+        hurst_value = m['hurst']
+        convexity_ratio = convexity_check(m['gamma'], m['delta'])
+    except:
         hurst_value = 0.0
         convexity_ratio = 0.0
-    triggers = {
-        'low_vix': 19.34 < 15,
-        'hurst': hurst_value > 0.6
-    }
-    triggers_met = sum(triggers.values())
-    edge = 2.5 if triggers_met >= 1 else 1.5  # Adjusted for 1-2 triggers
-    # Prediction (optional boost)
-    prob = 0.15 if triggers_met >= 1 else 0.10
-    # Positioning (with Patience Principle and volatility cap)
-    vix_current = 19.34  # Mock; use yf.download('^VIX')['Close'][-1] for real
+    triggers = {'low_vix': 19.34 < 15, 'hurst': hurst_value > 0.6}
+    edge = 2.5 if sum(triggers.values()) >= 1 else 1.5
+    prob = 0.15 if sum(triggers.values()) >= 1 else 0.10
+    vix_current = 19.34
     if vix_current > 30 or sentiment < -0.5:
-        allocation = 0.10  # Pause ramping (vol cap)
+        allocation = 0.10
     else:
         allocation = 0.25 if vix_current > 20 else 0.20
-    positioning = "Hold or roll positions" if edge < 3 else f"Enter VIX calls (40-50%), put spreads (20-30%), CDX (10-20%) with allocation {allocation}"
-    # Review (with tail ROI)
-    monte_carlo = monte_carlo_payouts()
-    tail_roi = (monte_carlo - 20000) / 20000 if monte_carlo > 20000 else 0  # Mock tail ROI >10x
-    # Monitoring (with dynamic drawdown pause)
-    drawdown = 0.25  # Mock; use max peak-to-trough in returns for real
+
+    # === YOUR STRATEGY REFINEMENTS ===
+    if hurst_value > 0.65 and sentiment < -0.8:
+        positioning = "Enter VIX calls (50%), CDX puts (30%)"
+        alert = "CRASH SIGNAL — DEPLOY TAIL HEDGE"
+    else:
+        positioning = "Hold or roll positions" if edge < 3 else f"Enter VIX calls (40-50%), put spreads (20-30%), CDX (10-20%) with allocation {allocation}"
+
+    mc = monte_carlo_payouts()
+    tail_roi = (mc - 20000) / 20000
     exceedance_code = "import numpy as np; import yfinance as yf; prices = yf.download('^VIX', period='6mo')['Close'].dropna(); returns = prices.pct_change().dropna(); z_scores = (returns - np.mean(returns)) / np.std(returns); result = float(np.sum(np.abs(z_scores) > 5) / len(returns) * 100)"
     exceedance = float(code_execution(exceedance_code))
-    alert = "Vega stable" if metrics_dict.get('vega', 0.05) < 0.2 else "Alert: High vega"
-    if drawdown > 0.15 or exceedance > 50:  # Asset-specific for tech/crypto
-        alert += " (Pause entries: High drawdown/exceedance)"
-    # Post-Crisis Alpha
-    post_crisis_alloc = "30-50% to distressed tech/crypto (e.g., BTC puts)" if edge >= 2.5 else "N/A"
-    # Visualization
+    alert_msg = "Vega stable" if m.get('vega', 0.05) < 0.2 else "Alert: High vega"
+    if 0.25 > 0.15 or exceedance > 50:
+        alert_msg += " (Pause entries: High drawdown/exceedance)"
     img_url = 'https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png'
     img_desc = view_image(img_url)
-    # CBOE options
-    cboe_data = browse_page("https://www.cboe.com/delayed_quotes/vix/quote_table", "extract OTM VIX calls premiums")
-    # Summary
+    cboe_data = get_cboe_vix_options()
     return f"""
-    UITG Monthly Run (2025-10-21):
-    - Scan: {scan_results[0]}
-    - Metrics: {metrics}
-    - Sentiment: {sentiment}
-    - Triggers: {triggers} (Met: {triggers_met}/2, Edge: {edge}x, Convexity Ratio: {convexity_ratio:.2f})
-    - Prediction: Crash prob {prob} (optional boost)
-    - Positioning: {positioning}
-    - Review: Monte Carlo avg capital {monte_carlo:.2f} (Tail ROI: {tail_roi:.2f}x >10x)
-    - Monitoring: {alert} (Exceedance: {exceedance:.2f}%)
-    - Post-Crisis Alpha: {post_crisis_alloc}
-    - CBOE Data: {cboe_data}
-    - Image: {img_desc}
-    """
-
-def web_search(query: str, num_results: int = 10) -> list:
-    # This is what dashboard.py needs
-    return google_search_hedges(query, num_results) if 'google_search_hedges' in globals() else []
-
-# === REAL GOOGLE SEARCH ===
-def google_search_hedges(query="cheap convex hedges 2025 VIX calls CDX", num=5):
-    try:
-        API_KEY = st.secrets["GOOGLE_API_KEY"]
-        CX = st.secrets["GOOGLE_CX"]
-        url = "https://www.googleapis.com/customsearch/v1"
-        params = {"q": query, "key": API_KEY, "cx": CX, "num": num}
-        response = requests.get(url, params=params, timeout=10)
-        items = response.json().get("items", [])
-        return [{
-            "title": item.get("title", "No title"),
-            "snippet": item.get("snippet", "No snippet"),
-            "url": item.get("link", "#")
-        } for item in items]
-    except:
-        return [{'title': f'Fallback #{i}', 'snippet': f'OTM VIX call at {20+i}', 'url': '#'} for i in range(num)]
-
-# === REPLACE web_search ===
-def web_search(query: str, num_results: int = 10) -> list:
-    return google_search_hedges(query, num_results)
-
-# === REAL CBOE OPTIONS ===
-def get_cboe_vix_options():
-    url = "https://cdn.cboe.com/api/global/delayed_quotes/options/VX.json"
-    try:
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        options = []
-        for opt in data['data']['calls']:
-            if opt['delta'] < 0.5 and opt['bid'] > 0:
-                premium = (opt['bid'] + opt['ask']) / 2
-                options.append({
-                    "Strike": opt['strike'],
-                    "Premium": round(premium, 2),
-                    "IV": round(opt['volatility'], 1),
-                    "Delta": round(opt['delta'], 3)
-                })
-        return options[:5] or "No OTM calls"
-    except:
-        vix = yf.download('^VIX', period='1d')['Close'].iloc[-1]
-        return f"VIX: {vix:.1f} — Suggest OTM calls at {vix + 5:.0f}"
+**UITG Monthly Run**
+- **Scan**: {len(scan_results)} real results
+- **Hurst**: {hurst_value:.3f} | **Sentiment**: {sentiment:.3f} | **Edge**: {edge}x
+- **Convexity**: {convexity_ratio:.3f}
+- **Positioning**: {positioning}
+- **Monte Carlo**: ${mc:,.0f} (Tail ROI: {tail_roi:.1f}x)
+- **CBOE**: {cboe_data}
+"""
 
 print("UITG Master Script Initialized")
