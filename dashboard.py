@@ -31,12 +31,14 @@ with st.expander("Scan Results"):
         st.write(r['snippet'])
         st.link_button("Visit URL", r['url'])
 
+# CBOE Option Suggestions
 with st.expander("CBOE Option Suggestions"):
-    data = browse_page("https://www.cboe.com/delayed_quotes/vix/quote_table", "extract OTM VIX calls premiums")
-    if "Mock" in data:
-        st.info("Using fallback data")
-        options = [{"Strike": "20", "Premium": 1.11, "IV": 0.25, "Delta": 0.15},
-                   {"Strike": "22", "Premium": 0.85, "IV": 0.27, "Delta": 0.12}]
+    try:
+        vix_future = yf.download('VX=F', period='1d')['Close'].iloc[-1]
+        st.success(f"Real VIX Future: ${vix_future:.2f}")
+        st.write("Suggested: OTM calls 10-20% above spot")
+    except:
+        st.warning("yfinance fallback failed")
     else:
         st.success("Real CBOE data!")
         st.write(data)
