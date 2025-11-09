@@ -19,6 +19,8 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from scipy.stats import norm
 import time
 import warnings
+import requests
+
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Persistent globals for code_execution
@@ -28,7 +30,6 @@ def test_uitg_setup():
     return "UITG setup test passed"
 
 def view_x_video(video_url: str) -> str:
-    # Mock function to bypass moviepy
     return f"Mock video viewed: {video_url} (e.g., hedge explainer)"
 
 def code_execution(code: str) -> str:
@@ -71,7 +72,7 @@ def x_semantic_search(query: str, limit: int = 10, min_score_threshold: float = 
     mock_docs = [f'Mock relevant post for {query} #{i}' for i in range(limit)]
     scores = np.random.uniform(0.1, 0.9, limit)
     filtered = [mock_docs[i] for i in range(limit) if scores[i] > min_score_threshold]
-    return [{'text': doc, 'score': float(scores[i])} for i in enumerate(filtered)]
+    return [{'text': doc, 'score': float(scores[i])} for i in range(limit) if scores[i] > min_score_threshold]
 
 def aggregate_sentiment(posts: list) -> float:
     analyzer = SentimentIntensityAnalyzer()
