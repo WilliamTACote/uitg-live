@@ -259,4 +259,46 @@ def web_search(query: str, num_results: int = 10) -> list:
     # This is what dashboard.py needs
     return google_search_hedges(query, num_results) if 'google_search_hedges' in globals() else []
 
+# === REAL GOOGLE SEARCH ===
+def google_search_hedges(query="cheap convex hedges 2025 VIX calls CDX", num=5):
+    try:
+        API_KEY = st.secrets["GOOGLE_API_KEY"]
+        CX = st.secrets["GOOGLE_CX"]
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {"q": query, "key": API_KEY, "cx": CX, "num": num}
+        response = requests.get(url, params=params, timeout=10)
+        items = response.json().get("items", [])
+        return [{
+            "title": item.get("title", "No title"),
+            "snippet": item.get("snippet", "No snippet"),
+            "url": item.get("link", "#")
+        } for item in items]
+    except:
+        return [{'title': f'Fallback #{i}', 'snippet': f'OTM VIX call at {20+i}', 'url': '#'} for i in range(num)]
+
+# === REPLACE web_search ===
+def web_search(query: str, num_results: int = 10) -> list:
+    return google_search_hedges(query, num_results)
+
+# === REAL CBOE OPTIONS ===
+def get_cboe_vix_options():
+    url = "https://cdn.cboe.com/api/global/delayed_quotes/options/VX.json"
+    try:
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        options = []
+        for opt in data['data']['calls']:
+            if opt['delta'] < 0.5 and opt['bid'] > 0:
+                premium = (opt['bid'] + opt['ask']) / 2
+                options.append({
+                    "Strike": opt['strike'],
+                    "Premium": round(premium, 2),
+                    "IV": round(opt['volatility'], 1),
+                    "Delta": round(opt['delta'], 3)
+                })
+        return options[:5] or "No OTM calls"
+    except:
+        vix = yf.download('^VIX', period='1d')['Close'].iloc[-1]
+        return f"VIX: {vix:.1f} — Suggest OTM calls at {vix + 5:.0f}"
+
 print("UITG Master Script Initialized")
