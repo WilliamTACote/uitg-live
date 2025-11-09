@@ -119,7 +119,7 @@ def get_cboe_vix_options():
                 })
         return options[:5]  # Top 5 OTM calls
     except:
-        # Fallback to yfinance VIX future
+        # yfinance fallback
         try:
             vix = yf.download('^VIX', period='1d')['Close'].iloc[-1]
             return f"Real VIX Index: {vix:.2f} (yfinance fallback) — Suggest OTM calls at strike {round(vix + 5, 0)}"
