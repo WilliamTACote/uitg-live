@@ -1,15 +1,10 @@
 # UITG Tools Master Script
+import requests
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import yfinance as yf
 from hurst import compute_Hc
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from bs4 import BeautifulSoup
-import streamlit as st
 from PIL import Image
 from io import BytesIO
 import PyPDF2
@@ -28,7 +23,6 @@ def test_uitg_setup():
     return "UITG setup test passed"
 
 def view_x_video(video_url: str) -> str:
-    # Mock function to bypass moviepy
     return f"Mock video viewed: {video_url} (e.g., hedge explainer)"
 
 def code_execution(code: str) -> str:
@@ -36,8 +30,7 @@ def code_execution(code: str) -> str:
         exec_locals = {}
         exec(code, persistent_globals, exec_locals)
         persistent_globals.update(exec_locals)
-        result = exec_locals.get('result', 'No result variable set')
-        return str(result)
+        return str(exec_locals.get('result', 'No result variable set'))
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -71,7 +64,7 @@ def x_semantic_search(query: str, limit: int = 10, min_score_threshold: float = 
     mock_docs = [f'Mock relevant post for {query} #{i}' for i in range(limit)]
     scores = np.random.uniform(0.1, 0.9, limit)
     filtered = [mock_docs[i] for i in range(limit) if scores[i] > min_score_threshold]
-    return [{'text': doc, 'score': float(scores[i])} for i in range(limit) if scores[i] > min_score_threshold]
+    return [{'text': doc, 'score': float(scores[i])} for i, doc in enumerate(filtered)]
 
 def aggregate_sentiment(posts: list) -> float:
     analyzer = SentimentIntensityAnalyzer()
@@ -236,5 +229,54 @@ def run_uitg_monthly():
     - CBOE Data: {cboe_data}
     - Image: {img_desc}
     """
+import requests
+
+def get_cboe_vix_options():
+    url = "https://cdn.cboe.com/api/global/delayed_quotes/options/VX.json"
+    try:
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        options = []
+        for opt in data['data']['calls']:
+            strike = opt['strike']
+            bid = opt['bid']
+            ask = opt['ask']
+            iv = opt['volatility']
+            delta = opt['delta']
+            if bid > 0 and ask > 0 and delta < 0.5:  # OTM filter
+                premium = (bid + ask) / 2
+                options.append({
+                    "Strike": strike,
+                    "Premium": round(premium, 2),
+                    "IV": round(iv, 2),
+                    "Delta": round(delta, 3)
+                })
+        return options[:5]  # Top 5 OTM calls
+    except:
+        return []
+    
+def google_search_hedges(query="cheap convex hedges 2025 VIX calls CDX", num=5):
+    API_KEY = "AIzaSyCGmk1MOP3Ntir_xXAu54GswVUbQkhP2F0"
+    CX = "<script async src="https://cse.google.com/cse.js?cx=4441ed4ff97724d98">
+</script>
+<div class="gcse-search"></div>"
+    url = f"https://www.googleapis.com/customsearch/v1"
+    params = {
+        "q": query,
+        "key": API_KEY,
+        "cx": CX,
+        "num": num
+    }
+    try:
+        response = requests.get(url, params=params)
+        items = response.json().get("items", [])
+        return [{
+            "title": item["title"],
+            "snippet": item["snippet"],
+            "url": item["link"]
+        } for item in items]
+    except:
+        return []
+
 
 print("UITG Master Script Initialized")
