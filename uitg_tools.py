@@ -72,56 +72,59 @@ def x_semantic_search(query: str, limit: int = 10, min_score_threshold: float = 
     mock_docs = [f'Mock relevant post for {query} #{i}' for i in range(limit)]
     scores = np.random.uniform(0.1, 0.9, limit)
     filtered = [mock_docs[i] for i in range(limit) if scores[i] > min_score_threshold]
-    return [{'text': doc, 'score': float(scores[i])} for i in enumerate(filtered)]
+    return [{'text': doc, 'score': float(scores[i])} for i in range(limit) if scores[i] > min_score_threshold]
 
 def aggregate_sentiment(posts: list) -> float:
     analyzer = SentimentIntensityAnalyzer()
     scores = [analyzer.polarity_scores(post['text'])['compound'] for post in posts]
     return np.mean(scores) if scores else 0
 
-# Web Search Tools
-def web_search(query: str, num_results: int = 10) -> list:
-    # Mock for free tier; replace with Google API if key
-    results = [{'title': f'Mock result for {query} #{i}', 'snippet': f'Suggested hedge: OTM VIX call at strike {20+i}, premium ~${1.0 + i*0.1}', 'url': f'url{i}.com'} for i in range(num_results)]
-    return results
-
-def browse_page(url: str, instructions: str) -> str:
+# Real Web Search Tools (Google Custom Search)
+def google_search_hedges(query="cheap convex hedges 2025 VIX calls puts CDX", num=5):
+    API_KEY = st.secrets["GOOGLE_API_KEY"]  # Hidden in Streamlit Cloud
+    CX = st.secrets["GOOGLE_CX"]  # Hidden in Streamlit Cloud
+    url = "https://www.googleapis.com/customsearch/v1"
+    params = {"q": query, "key": API_KEY, "cx": CX, "num": num}
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        time.sleep(1)
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        text = soup.get_text(separator=' ', strip=True)[:1000]
-        return f"Extracted text: {text} (per {instructions})"
-    except Exception as e:
-        return f"Mock extracted text for {url} (per {instructions})"
+        response = requests.get(url, params=params, timeout=10)
+        items = response.json().get("items", [])
+        return [{
+            "title": item.get("title", "No title"),
+            "snippet": item.get("snippet", "No snippet"),
+            "url": item.get("link", "#")
+        } for item in items]
+    except:
+        return [{'title': f'Fallback result for {query} #{i}', 'snippet': f'Suggested hedge: OTM VIX call at strike {20+i}, premium ~${1.0 + i*0.1}', 'url': f'url{i}.com'} for i in range(num)]
 
-# Visual Tools
-def view_image(image_url: str) -> str:
+# Real CBOE VIX Options API
+def get_cboe_vix_options():
+    url = "https://cdn.cboe.com/api/global/delayed_quotes/options/VX.json"
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        time.sleep(1)
-        response = requests.get(image_url, headers=headers, timeout=10)
-        response.raise_for_status()
-        if 'text/html' in response.headers.get('Content-Type', ''):
-            soup = BeautifulSoup(response.text, 'html.parser')
-            img_tag = soup.find('img')
-            if img_tag and 'src' in img_tag.attrs:
-                image_url = img_tag['src']
-                if not image_url.startswith('http'):
-                    image_url = f"https://finance.yahoo.com{image_url}"
-                time.sleep(1)
-                response = requests.get(image_url, headers=headers, timeout=10)
-                response.raise_for_status()
-        img = Image.open(BytesIO(response.content))
-        return f"Image viewed: {img.size} pixels (e.g., VIX chart with low vol)"
-    except Exception as e:
-        return f"Error viewing image {image_url}: {str(e)}"
-
-def view_x_video(video_url: str) -> str:
-    # Mock function to bypass moviepy
-    return f"Mock video viewed: {video_url} (e.g., hedge explainer)"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        options = []
+        for opt in data['data']['calls']:
+            strike = opt['strike']
+            bid = opt['bid']
+            ask = opt['ask']
+            iv = opt['volatility']
+            delta = opt['delta']
+            if bid > 0 and ask > 0 and delta < 0.5:  # OTM filter
+                premium = (bid + ask) / 2
+                options.append({
+                    "Strike": strike,
+                    "Premium": round(premium, 2),
+                    "IV": round(iv, 2),
+                    "Delta": round(delta, 3)
+                })
+        return options[:5]  # Top 5 OTM calls
+    except:
+        # Fallback to yfinance VIX future
+        try:
+            vix = yf.download('^VIX', period='1d')['Close'].iloc[-1]
+            return f"Real VIX Index: {vix:.2f} (yfinance fallback) — Suggest OTM calls at strike {round(vix + 5, 0)}"
+        except:
+            return "No CBOE data"
 
 # Convexity Check Tool
 def convexity_check(gamma, delta):
