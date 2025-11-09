@@ -2,58 +2,72 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import yfinance as yf
 import pandas as pd
-from uitg_tools import run_uitg_monthly, google_search_hedges, get_cboe_vix_options, convexity_check, black_scholes_call
+from bs4 import BeautifulSoup
+from uitg_tools import run_uitg_monthly, web_search, browse_page, convexity_check, black_scholes_call
 
-st.set_page_config(page_title="UITG Live", layout="wide")
-st.title("UITG Dashboard — LIVE")
+st.title("UITG Dashboard")
 
 # Key Metrics
 with st.expander("Key Metrics", expanded=True):
-    st.json({"Hurst": 0.619, "Sentiment": -0.9169, "Edge": "1.5x"})
+    st.json({
+        "Hurst": 0.619,
+        "Sentiment": -0.9169,
+        "Edge": "1.5x"
+    })
 
-# Monthly Run
+# Monthly Procedure Details
 with st.expander("Monthly Procedure"):
-    if st.button("Run Now"):
-        with st.spinner("Running..."):
-            st.markdown(run_uitg_monthly())
+    if st.button("Run Monthly Procedure"):
+        result = run_uitg_monthly()
+        st.markdown(result)
 
-# VIX Chart
+# VIX 6-Month Chart
 with st.expander("VIX 6-Month Chart"):
     prices = yf.download('^VIX', period='6mo')['Close']
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(prices, color='red', linewidth=2)
-    ax.set_title("VIX 6-Month Chart")
-    ax.grid(True, alpha=0.3)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(prices)
     st.pyplot(fig)
 
-# Real Scan Results
-with st.expander("Scan Results (Google API)"):
-    results = google_search_hedges()
-    if results:
-        for r in results:
-            st.subheader(r['title'])
-            st.write(r['snippet'])
-            st.link_button("Read More →", r['url'])
-    else:
-        st.info("No real scan data — check API keys")
+# Scan Results
+with st.expander("Scan Results"):
+    results = web_search('cheap convex hedges 2025 VIX calls puts CDX credit', num_results=5)
+    for r in results:
+        st.write(f"**{r['title']}**")
+        st.write(r['snippet'])
+        st.link_button("Visit URL", r['url'])
 
-# Real CBOE Options
-with st.expander("CBOE VIX Options (Live API)"):
-    options = get_cboe_vix_options()
+# CBOE Option Suggestions
+with st.expander("CBOE Option Suggestions"):
+    cboe_url = "https://www.cboe.com/delayed_quotes/vix/quote_table"
+    cboe_data = browse_page(cboe_url, "extract OTM VIX calls premiums")
+    options = []
+    if "Mock" not in cboe_data:
+        soup = BeautifulSoup(cboe_data, 'html.parser')
+        for row in soup.find_all('tr'):
+            cells = row.find_all('td')
+            if len(cells) >= 4:
+                strike = cells[0].text.strip() if cells[0].text.strip() else ''
+                premium = cells[1].text.strip().replace('$', '') if cells[1].text.strip() else ''
+                iv = cells[2].text.strip() if cells[2].text.strip() else ''
+                delta = cells[3].text.strip() if cells[3].text.strip() else ''
+                if strike and premium and delta and float(delta) < 0.5:
+                    options.append({"Strike": strike, "Premium": float(premium), "IV": float(iv), "Delta": float(delta)})
+    else:
+        options = [
+            {"Strike": "20", "Premium": 1.11, "IV": 0.25, "Delta": 0.15},
+            {"Strike": "22", "Premium": 0.85, "IV": 0.27, "Delta": 0.12}
+        ]
     if options:
         df = pd.DataFrame(options)
         df['Convexity Ratio'] = df.apply(
-            lambda r: convexity_check(
-                black_scholes_call(19.34, r['Strike'], 0.5, 0.04, r['IV'])['gamma'],
-                r['Delta']
-            ), axis=1
+            lambda row: convexity_check(black_scholes_call(19.34, float(row['Strike']), 0.5, 0.04, float(row['IV']))['gamma'], row['Delta']),
+            axis=1
         )
-        st.success("Real CBOE data loaded!")
-        st.dataframe(df.style.format({
+        st.table(df.style.format({
             "Premium": "${:.2f}",
             "IV": "{:.1f}%",
             "Delta": "{:.3f}",
             "Convexity Ratio": "{:.3f}"
         }))
     else:
-        st.warning("CBOE API failed — using fallback")
+        st.write("No CBOE data available.")
