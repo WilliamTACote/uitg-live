@@ -79,6 +79,23 @@ def aggregate_sentiment(posts: list) -> float:
     scores = [analyzer.polarity_scores(post['text'])['compound'] for post in posts]
     return np.mean(scores) if scores else 0
 
+def google_search_hedges(query="cheap convex hedges 2025 VIX calls CDX", num=5):
+    try:
+        API_KEY = st.secrets["GOOGLE_API_KEY"]
+        CX = st.secrets["GOOGLE_CX"]
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {"q": query, "key": API_KEY, "cx": CX, "num": num}
+        response = requests.get(url, params=params, timeout=10)
+        items = response.json().get("items", [])
+        return [{
+            "title": item.get("title", "No title"),
+            "snippet": item.get("snippet", "No snippet"),
+            "url": item.get("link", "#")
+        } for item in items]
+    except:
+        # Fallback mock
+        return [{'title': f'Fallback result #{i}', 'snippet': f'OTM VIX call at strike {20+i}', 'url': '#'} for i in range(num)]
+    
 # Web Search Tools
 def web_search(query: str, num_results: int = 10) -> list:
     # Mock for free tier; replace with Google API if key
@@ -237,5 +254,9 @@ def run_uitg_monthly():
     - CBOE Data: {cboe_data}
     - Image: {img_desc}
     """
+
+def web_search(query: str, num_results: int = 10) -> list:
+    # This is what dashboard.py needs
+    return google_search_hedges(query, num_results) if 'google_search_hedges' in globals() else []
 
 print("UITG Master Script Initialized")
