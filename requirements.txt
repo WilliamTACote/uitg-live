@@ -1,0 +1,14 @@
+streamlit
+yfinance
+pandas
+matplotlib
+numpy
+scipy
+hurst
+selenium
+beautifulsoup4
+nltk
+vaderSentiment
+pillow
+pdfplumber
+PyPDF2
