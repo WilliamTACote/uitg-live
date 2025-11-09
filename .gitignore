@@ -1,0 +1,9 @@
+﻿uitg_env/
+__pycache__/
+*.pyc
+*.log
+chromedriver.log
+echo "__pycache__/
+*.pyc
+*.pyo
+*.pyd" > .gitignore
